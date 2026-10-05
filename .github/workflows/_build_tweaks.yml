@@ -33,6 +33,11 @@ on:
         required: true
         default: false
 
+      enable_localization:
+        type: boolean
+        required: true
+        default: false
+
       tweak_version:
         type: string
         required: false
@@ -49,6 +54,9 @@ jobs:
     runs-on: macos-latest
 
     steps:
+      - uses: actions/checkout@v6
+        if: ${{ inputs.enable_localization }}
+
       - name: Install Dependencies
         run: brew install make ldid dpkg
 
@@ -62,7 +70,7 @@ jobs:
         id: theos
         uses: actions/cache@v5
         env:
-          cache-name: theos_cache_13c2237
+          cache-name: theos_cache_9bc7340
         with:
           path: theos/
           key: ${{ env.cache-name }}
@@ -73,7 +81,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           repository: theos/theos
-          ref: 13c22376b5d83ff759c1993de0a861e673aa522b
+          ref: 9bc73406cf80b711ef4d02c15ff1dedc4478a275
           path: theos
           submodules: recursive
 
@@ -149,7 +157,7 @@ jobs:
         run: git clone --quiet --depth=1 https://github.com/PoomSmart/YouQuality.git
 
       - name: Clone YTVideoOverlay
-        if: ${{ inputs.enable_yq || inputs.enable_youpip }}
+        if: ${{ inputs.enable_yq || inputs.enable_youpip || inputs.enable_ytuhd }}
         run: git clone --quiet --depth=1 https://github.com/PoomSmart/YTVideoOverlay.git
 
       - name: Clone DontEatMyContent
@@ -165,7 +173,7 @@ jobs:
       - name: Build YTUHD
         if: ${{ inputs.enable_ytuhd }}
         run: |
-          cd YTUHD && make clean package DEBUG=0 FINALPACKAGE=1 ARCHS=arm64
+          cd YTUHD && make clean package DEBUG=0 FINALPACKAGE=1
           mv packages/*.deb ../ytuhd.deb
 
       - name: Build Return-YouTube-Dislikes
@@ -193,7 +201,7 @@ jobs:
           mv packages/*.deb ../yq.deb
 
       - name: Build YTVideoOverlay
-        if: ${{ inputs.enable_yq || inputs.enable_youpip }}
+        if: ${{ inputs.enable_yq || inputs.enable_youpip || inputs.enable_ytuhd }}
         run: |
           cd YTVideoOverlay && make clean package DEBUG=0 FINALPACKAGE=1
           mv packages/*.deb ../ytvo.deb
@@ -212,8 +220,22 @@ jobs:
           git checkout
           mv *.appex ..
 
+      - name: Update localization
+        if: ${{ inputs.enable_localization }}
+        run: |
+          mkdir debdir
+          dpkg-deb -R ytplus.deb debdir
+          rm ytplus.deb
+          find "layout/Library/Application Support/YTLite.bundle" \
+            -mindepth 1 -maxdepth 1 -type d -name "*.lproj" -not -name "en.lproj" \
+            -exec cp -R "{}" "debdir/Library/Application Support/YTLite.bundle/" \;
+          cd debdir/
+          find . -type f -not -path "./DEBIAN/*" -exec md5sum {} + | sort -k 2 | sed 's/\.\/\(.*\)/\1/' > DEBIAN/md5sums
+          cd ../
+          dpkg-deb --root-owner-group -b debdir ytplus.deb
+
       - name: Upload built debs as artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: built-debs
           path: |
